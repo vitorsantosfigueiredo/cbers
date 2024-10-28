@@ -1,0 +1,118 @@
+---
+title: "Unido Imagens Cbers 4A MUX L2"
+author: "Vítor Ferreira / Prof. Marcelo Alves"
+date: "2024-10-26"
+output: html_document
+---
+## CBERS 4A MUX L2
+O Satélite CBERS-4A foi lançado em 20 de dezembro de 2019. Mantém os mesmos sensores do CBERS-4, mas com melhorias na qualidade das imagens e na calibração. O MUX L2 possui resolução Espacial: 10 metros. e conta com as4 bandas espectrais: Azul, Verde, Vermelho e Infravermelho Próximo (NIR).
+
+#Habilitando as Bibliotecas    
+```{r message=FALSE}
+library(raster)
+library(tmap)
+library(mapview)
+library(sf)
+library(dplyr)
+```
+
+Neste exemplo vamos unir duas imagens do CBERS do dia 02 de março de 2024. Vamo utilizar duas imagens para cobrir a totalidade do território que estamos investigando. Posteriormente poderemos diminuir essa extensão para focar apenas em um pequena área de interresse.
+
+```{r message=FALSE}
+# Definir os caminhos das imagens
+
+#Imagem 01
+caminhos_imagens_01 <- c(
+  "/home/vitor/UFLA/mestrado/2024_2/Sensoriamento Remoto/Cbers_4a_muxL2/Imagem_01/CBERS_4A_MUX_20240302_201_139_L2_BAND5.tif",
+  "/home/vitor/UFLA/mestrado/2024_2/Sensoriamento Remoto/Cbers_4a_muxL2/Imagem_01/CBERS_4A_MUX_20240302_201_139_L2_BAND6.tif",
+  "/home/vitor/UFLA/mestrado/2024_2/Sensoriamento Remoto/Cbers_4a_muxL2/Imagem_01/CBERS_4A_MUX_20240302_201_139_L2_BAND7.tif",
+  "/home/vitor/UFLA/mestrado/2024_2/Sensoriamento Remoto/Cbers_4a_muxL2/Imagem_01/CBERS_4A_MUX_20240302_201_139_L2_BAND8.tif"
+)
+
+
+#Definir os caminhos das imagens da segunda cena
+caminhos_imagens_2 <- c(
+  "/home/vitor/UFLA/mestrado/2024_2/Sensoriamento Remoto/Cbers_4a_muxL2/Imagem_02/CBERS_4A_MUX_20240302_201_140_L2_BAND5.tif",
+  "/home/vitor/UFLA/mestrado/2024_2/Sensoriamento Remoto/Cbers_4a_muxL2/Imagem_02/CBERS_4A_MUX_20240302_201_140_L2_BAND6.tif",
+  "/home/vitor/UFLA/mestrado/2024_2/Sensoriamento Remoto/Cbers_4a_muxL2/Imagem_02/CBERS_4A_MUX_20240302_201_140_L2_BAND7.tif",
+  "/home/vitor/UFLA/mestrado/2024_2/Sensoriamento Remoto/Cbers_4a_muxL2/Imagem_02/CBERS_4A_MUX_20240302_201_140_L2_BAND8.tif"
+)
+
+```
+
+Detalhe para o endereço que deve ser alterado para o local do usuário, outra opção seria utilizar a função getwd() e importar apenas os nomes dos arquivos.
+
+
+```{r message=FALSE}
+# Criar um RasterStack
+cbers_stack_01 <- stack(caminhos_imagens_01)
+
+# Visualizar informações sobre o RasterStack
+print(cbers_stack_01)
+
+
+# Criar um RasterStack para a segunda cena
+cbers_stack_02 <- stack(caminhos_imagens_2)
+
+print(cbers_stack_01)
+print(cbers_stack_02)
+
+```
+
+## Definir valor NoData para ambos os RasterStacks, se necessário
+```{r message=FALSE}
+# Definir valor NoData para ambos os RasterStacks, se necessário
+NAvalue(cbers_stack_01) <- 0  # Ajuste o valor 0 ou o valor de NA conhecido para seus dados
+NAvalue(cbers_stack_02) <- 0  # Ajuste o valor 0 ou o valor de NA conhecido para seus dados
+
+```
+
+#Unindo as imagens
+```{r message=FALSE}
+# Tentar unir as duas cenas novamente
+imagem_unida <- merge(cbers_stack_01, cbers_stack_02)
+
+# Verificar se imagem_unida contém valores NA e definir, se necessário
+NAvalue(imagem_unida) <- 0
+```
+
+### Plotando as Imagens
+```{r message=FALSE}
+# Visualizar a imagem unida com bandas RGB, ignorando valores NA
+plotRGB(imagem_unida, r = 4, g = 3, b = 2, stretch = "lin", na.rm = TRUE, main = "Imagem Unida Sem Sobreposição")
+```
+
+## Aplicando uma Mascara para a Imagem
+
+Utilizamos como referencia o mapa .shp do estado de Minas Gerais, para então selecionar os municípios
+```{r message=FALSE}
+MG <- st_read("/home/vitor/UFLA/mestrado/2024_2/Geoprocessamento/shp/MG_Municipios_2022/MG_Municipios_2022.shp")
+
+municipios <- c("Lavras", "Ijaci", "Perdões", "Ribeirão Vermelho", "Bom Sucesso", "Itumirim", "Ibituruna")
+
+# Filtrar o shapefile para manter apenas os municípios da Região Campo das Vertentes
+funil <- MG %>%
+  filter(NM_MUN %in% municipios)
+
+```
+
+#Transformando o CRS
+```{r message=FALSE}
+#Transformar o CRS do shapefile
+funil <- st_transform(funil, crs = crs(imagem_unida))
+
+# Cortar o raster para a extensão do shapefile
+cbers_cortado <- crop(imagem_unida, extent(funil))
+
+# Converter o RasterBrick para RasterStack
+cbers_stack <- stack(cbers_cortado)
+```
+
+#Aplicando a mascara e  Plot da Imagem da Região com a composição RGB
+```{r message=FALSE}
+# Aplicar a máscara do shapefile para manter apenas os dados dentro do polígono
+cbers_mascara <- mask(cbers_stack, funil)
+
+# Plotar uma composição RGB para o raster cbers_mascara
+plotRGB(cbers_mascara, r = 3, g = 2, b = 1, stretch = "lin", main = "Composição RGB - CBERS Máscara")
+```
